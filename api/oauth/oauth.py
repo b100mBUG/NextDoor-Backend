@@ -12,7 +12,7 @@ from database.config_db import get_session
 
 router = APIRouter()
 
-ACCESS_TOKEN_EXPIRES_MINUTES = 15
+ACCESS_TOKEN_EXPIRES_DAYS = 15
 
 @router.post("/token")
 async def signin_client(
@@ -31,7 +31,7 @@ async def signin_client(
 
     access_token = create_access_token(
         data = {"sub": user.email},
-        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRES_MINUTES)
+        expires_delta = timedelta(days=ACCESS_TOKEN_EXPIRES_DAYS)
     )
 
     return {
@@ -61,6 +61,4 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token")
     
     return user
-
-
 

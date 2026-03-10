@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -24,7 +24,6 @@ router = APIRouter()
 async def show_apartments(
     limit: int = 20,
     offset: int = 0,
-    _ = Depends(role_checker(mtl.UserRole.TENANT, mtl.UserRole.ADMIN)),
     db: AsyncSession = Depends(get_session)
 ):
     apartments = await fetch_apartments(db=db, limit=limit, offset=offset)
@@ -35,13 +34,11 @@ async def show_apartments(
 
 @router.get("/apartments-filter/", response_model=list[apartment_schemas.ApartmentOut])
 async def filter_through_apartments(
-    filters: apartment_schemas.ApartmentFilter,
+    filters: apartment_schemas.ApartmentFilter = Depends(),
     _ = Depends(role_checker(mtl.UserRole.TENANT, mtl.UserRole.ADMIN)),
     db: AsyncSession = Depends(get_session)
 ):
-    apartments = await filter_apartments(db=db, filters=filters.model_dump())
-    if not apartments:
-        raise_exception(404, "Apartments not found")
+    apartments = await filter_apartments(db=db, filters=filters)
     return apartments
 
 
@@ -55,8 +52,8 @@ async def show_your_apartments(
 ):
     if current_user.role != mtl.UserRole.ADMIN:
         landlord_id = current_user.id
-    elif landlord_id is None:
-        raise_exception(400, "Admin must provide landlord_id")
+    else:
+        landlord_id = landlord_id or current_user.id
 
     apartments = await fetch_your_apartments(db=db, limit=limit, offset=offset, landlord_id=landlord_id)
     if not apartments:
@@ -72,8 +69,8 @@ async def add_new_apartment(
 ):
     if current_user.role != mtl.UserRole.ADMIN:
         landlord_id = current_user.id
-    elif landlord_id is None:
-        raise_exception(400, "Admin must provide landlord_id")
+    else:
+        landlord_id = landlord_id or current_user.id
 
     apartment = await add_apartment(db=db, landlord_id=landlord_id, apartment_detail=detail.model_dump())
     if not apartment:
@@ -96,8 +93,8 @@ async def add_new_apartment_media(
 
     if current_user.role != mtl.UserRole.ADMIN:
         landlord_id = current_user.id
-    elif landlord_id is None:
-        raise_exception(400, "Admin must provide landlord_id")
+    elif not landlord_id:
+        landlord_id = landlord_id or current_user.id
 
     media_list = []
 
@@ -112,14 +109,13 @@ async def add_new_apartment_media(
                 if upload_result.get("resource_type") == "video"
                 else mtl.MediaType.IMAGE
             ),
-            "is_cover": False
         })
 
     apartment = await add_apartment_media(
         db=db,
         apartment_id=apartment_id,
+        landlord_id=landlord_id,
         media_list=media_list,
-        landlord_id=landlord_id
     )
 
     return apartment
@@ -154,8 +150,8 @@ async def remove_apartment(
 ):
     if current_user.role != mtl.UserRole.ADMIN:
         landlord_id = current_user.id
-    elif landlord_id is None:
-        raise_exception(400, "Admin must provide landlord_id")
+    else:
+        landlord_id = landlord_id or current_user.id
 
     try:
         await mark_deleted(

@@ -45,6 +45,13 @@ async def find_users(
         raise_exception(404, "Users not found")
     return users
 
+@router.get("/users-me/", response_model=users_schemas.UserOut)
+async def get_me(
+    current_user = Depends(role_checker(
+        mtl.UserRole.TENANT, mtl.UserRole.LANDLORD, mtl.UserRole.AGENT, mtl.UserRole.ADMIN
+    ))
+):
+    return current_user
 
 @router.post("/users-add/", response_model=users_schemas.UserOut)
 async def add_new_user(
@@ -69,9 +76,7 @@ async def edit_user(
     if current_user.role != mtl.UserRole.ADMIN:
         user_id = current_user.id
     else:
-        if not target_user_id:
-            raise_exception(400, "Admin must provide target_user_id")
-        user_id = target_user_id
+        user_id = target_user_id or str (current_user.id)
 
     user = await update_user(db=db, user_detail=detail.model_dump(), user_id=user_id)
     if not user:

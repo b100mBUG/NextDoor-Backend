@@ -1,4 +1,5 @@
 from uuid import uuid4
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,43 +13,23 @@ async def add_apartment(
     landlord_id: str,
     apartment_detail: dict | None = None,
 ) -> Apartment:
-    """
-    Adds a new apartment to the database.
-
-    Args:
-        db (AsyncSession): async DB session
-        landlord_id (str): ID of the landlord (User.id)
-        apartment_detail (dict, optional): apartment data:
-            {
-                city: str,
-                area: str,
-                rent: int,
-                deposit: int,
-                house_type: HouseType,
-                water_supply: WaterSupply,
-                bathroom_type: BathroomType,
-                kitchen_type: KitchenType,
-                security_level: SecurityLevel,
-                is_available: bool
-            }
-
-    Returns:
-        Apartment: the newly created Apartment object
-    """
 
     apartment_detail = apartment_detail or {}
 
     if not apartment_detail:
-        return
+        raise ValueError("Apartment detail required")
 
-    # Ensure landlord exists
-    stmt = select(User).where(User.id == landlord_id, User.role == mtl.UserRole.LANDLORD)
+    stmt = select(User).where(
+        User.id == landlord_id,
+        User.role.in_([mtl.UserRole.LANDLORD, mtl.UserRole.ADMIN])
+    )
+
     res = await db.execute(stmt)
     landlord = res.scalars().first()
+
     if not landlord:
         raise ValueError("Landlord not found or invalid role.")
 
-    # Create Apartment
     apartment = Apartment(
         landlord_id=landlord_id,
         city=apartment_detail.get("city"),
@@ -60,12 +41,21 @@ async def add_apartment(
         bathroom_type=apartment_detail.get("bathroom_type", mtl.BathroomType.PRIVATE),
         kitchen_type=apartment_detail.get("kitchen_type", mtl.KitchenType.PRIVATE),
         security_level=apartment_detail.get("security_level", mtl.SecurityLevel.GATE),
-        is_available=apartment_detail.get("is_available", True)
+        is_available=apartment_detail.get("is_available", True),
     )
 
     db.add(apartment)
     await db.commit()
     await db.refresh(apartment)
 
-    return apartment
+    stmt = (
+        select(Apartment)
+        .options(selectinload(Apartment.media))
+        .options(selectinload(Apartment.landlord))
+        .where(Apartment.id == apartment.id)
+    )
+
+    res = await db.execute(stmt)
+
+    return res.scalars().first()
 
